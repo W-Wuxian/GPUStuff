@@ -4,4 +4,15 @@ src=$1
 exec=$2
 
 #cd $PWD
-nvcc -O3 -arch=sm_86 -Xcompiler -Wall --ptxas-options=-v $src -o $exec
+#nvcc -O3 -arch=sm_86 -Xcompiler -Wall --ptxas-options=-v $src -o $exec
+
+##guix shell openblas
+##module load nvhpc/
+#nvcc -O3 -arch=sm_86 -Xcompiler -Wall --ptxas-options=-v $src -o $exec -I /gnu/store/bp6h1xv6kcvdq871i5g4q8jz3xzbrvm3-profile/include -L /gnu/store/bp6h1xv6kcvdq871i5g4q8jz3xzbrvm3-profile/lib -lopenblas
+
+export GUIX_LOCPATH=/tmp/guix-profiles
+mkdir -p $GUIX_LOCPATH
+guix shell --no-grafts cuda-toolkit openblas -- \
+nvcc -O3 -arch=sm_86 -Xcompiler -Wall --ptxas-options=-v $src -o $exec \
+-I /gnu/store/bp6h1xv6kcvdq871i5g4q8jz3xzbrvm3-profile/include -L /gnu/store/bp6h1xv6kcvdq871i5g4q8jz3xzbrvm3-profile/lib -lopenblas \
+&& ./run

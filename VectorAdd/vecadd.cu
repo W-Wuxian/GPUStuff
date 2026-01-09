@@ -1,3 +1,10 @@
+/*
+ * A is N
+ * B is N
+ * C is N
+ * C = A + B
+ */
+
 #include <stdio.h>
 #include <time.h>
 #include <stdlib.h>
@@ -16,10 +23,10 @@ __global__ void pinfo(){
 }
 
 __global__ void vector_add(const float* A, const float* B, float* C, int N) {
-    int idx = threadIdx.x + blockDim.x * blockIdx.x;
-    if (idx < N){
-        //printf("idx %d \n", idx);
-        C[idx] = A[idx] + B[idx];
+    int ID = threadIdx.x + blockDim.x * blockIdx.x;
+    if (ID < N){
+        //printf("ID %d \n", ID);
+        C[ID] = A[ID] + B[ID];
     }
 }
 

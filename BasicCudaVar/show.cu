@@ -10,10 +10,18 @@
 #define PRINT_2U(...) printf("%u %u\n", __VA_ARGS__)
 #define PRINT_3U(...) printf("%u %u %u\n", __VA_ARGS__)
 
-
 __global__ void pinfo(){
-    int tid = threadIdx.x + blockIdx.x * blockDim.x + (threadIdx.y + blockIdx.y * blockDim.y) * (gridDim.x * blockDim.x)
-    + (threadIdx.z + blockIdx.z * blockDim.z) * (gridDim.x * blockDim.x * gridDim.y * blockDim.y);
+    // Global ID
+    //int tid = threadIdx.x + blockIdx.x * blockDim.x + (threadIdx.y + blockIdx.y * blockDim.y) * (gridDim.x * blockDim.x)
+    //+ (threadIdx.z + blockIdx.z * blockDim.z) * (gridDim.x * blockDim.x * gridDim.y * blockDim.y);
+    // Global ID, way 2 https://forums.developer.nvidia.com/t/calculate-global-thread-id/23541/2
+    // int tid = (threadIdx.x + threadIdx.y * blockDim.x + threadIdx.z *  blockDim.x *  blockDim.y) + (blockDim.x *  blockDim.y * blockDim.z)
+    //* (blockIdx.x + blockIdx.y * gridDim.x + blockIdx.z * gridDim.x * gridDim.y);
+    int intra_block = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+    int stride_block = blockDim.x * blockDim.y * blockDim.z;
+    int inter_block = blockIdx.x + blockIdx.y*gridDim.x + blockIdx.z*gridDim.x*gridDim.y;
+    int tid = intra_block + stride_block * inter_block; /*< eqv globbalThreadNum = threadNumInBlock + threadsPerBlock * blockNumInGrid */
+
     int totalThreads = gridDim.x * gridDim.y * gridDim.z * blockDim.x * blockDim.y * blockDim.z;
     for (int i = 0; i < totalThreads; i++) {
         if (i == tid) {
@@ -30,7 +38,7 @@ __global__ void pinfo(){
 
 int main(int argc, char **argv){
 
-    
+
     dim3 Dg = dim3(1); /*< Dimension and size of the grid; Dg.x * Dg.y * Dg.z equals the number of blocks being launched>*/
     dim3 Db = dim3(1); /*< Dimension and size of each block; Db.x * Db.y * Db.z equals the number of threads per block>*/
 
