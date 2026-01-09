@@ -1,0 +1,7 @@
+#!/bin/bash
+
+src=$1
+exec=$2
+
+#cd $PWD
+nvcc -O3 -arch=sm_86 -Xcompiler -Wall --ptxas-options=-v $src -o $exec
