@@ -18,33 +18,30 @@
 #define MIN_LEN 1
 #define MAX_LEN 10
 //#define MAX_LEN 8192
+#define MYTYPE double
 
-__global__ void matrix_multiplication(const float* A, const float* B, float* C, int M, int N, int K) {
-    int intra_block = threadIdx.x + blockDim.x * threadIdx.y;
-    int block_offset = blockDim.x * blockDim.y;
-    int inter_grid = blockIdx.x + gridDim.x * blockIdx.y;
-    int ID = intra_block + block_offset * inter_grid;
+__global__ void matrix_multiplication(const MYTYPE* A, const MYTYPE* B, MYTYPE* C, int M, int N, int K) {
+    // int intra_block = threadIdx.x + blockDim.x * threadIdx.y;
+    // int block_offset = blockDim.x * blockDim.y;
+    // int inter_grid = blockIdx.x + gridDim.x * blockIdx.y;
+    // int ID = intra_block + block_offset * inter_grid;
     int col = threadIdx.x + blockIdx.x * blockDim.x;
     int row = threadIdx.y + blockIdx.y * blockDim.y;
     if (row < M){
         if (col < K){
-            float dotproduct = (float)0.0;
+            MYTYPE dotproduct = (MYTYPE)0.0;
             for(int o = 0; o < N; ++o){
                 dotproduct += A[o + row * N] * B[o * K + col];
             }
             C[col + row * K] = dotproduct;
         }
     }
-    /*if (ID < N){
-        //printf("ID %d \n", ID);
-        C[ID] = A[ID] + B[ID];
-    }*/
 }
 
 void init_rand(void* A, int N) {
     for (int i = 0; i < N; ++i){
-        float x = ((float)rand()/(float)(RAND_MAX)) * N;
-        ((float*)A)[i] = x;
+        MYTYPE x = ((MYTYPE)rand()/(MYTYPE)(RAND_MAX)) * N;
+        ((MYTYPE*)A)[i] = x;
     }
 }
 
@@ -54,23 +51,23 @@ int main(){
     int M = rand() % (MAX_LEN - MIN_LEN + 1) + MIN_LEN;
     int N = rand() % (MAX_LEN - MIN_LEN + 1) + MIN_LEN;
     int K = rand() % (MAX_LEN - MIN_LEN + 1) + MIN_LEN;
-    size_t ASize = sizeof(float) * M * N;
-    size_t BSize = sizeof(float) * N * K;
-    size_t CSize = sizeof(float) * M * K;
+    size_t ASize = sizeof(MYTYPE) * M * N;
+    size_t BSize = sizeof(MYTYPE) * N * K;
+    size_t CSize = sizeof(MYTYPE) * M * K;
 
     // Allocate and initialize arrays on the Host
-    float* A = (float*) malloc(ASize);
-    float* B = (float*) malloc(BSize);
-    float* C = (float*) malloc(CSize);
+    MYTYPE* A = (MYTYPE*) malloc(ASize);
+    MYTYPE* B = (MYTYPE*) malloc(BSize);
+    MYTYPE* C = (MYTYPE*) malloc(CSize);
     init_rand(A, M * N);
     init_rand(B, N * K);
     memset(C, 0, CSize);
 
     // Allocate and initialize arrays on the device
     // The initialization step is a copy from host to device
-    float* dA=NULL;
-    float* dB=NULL;
-    float* dC=NULL;
+    MYTYPE* dA=NULL;
+    MYTYPE* dB=NULL;
+    MYTYPE* dC=NULL;
     cudaMalloc((void**)&dA, ASize);
     cudaMalloc((void**)&dB, BSize);
     cudaMalloc((void**)&dC, CSize);
@@ -93,12 +90,25 @@ int main(){
         }
         printf("\n");
     }
-    free(A);
-    free(B);
-    free(C);
-    cudaFree(dA);
-    cudaFree(dB);
-    cudaFree(dC);
+
+    memset(C, 0, CSize);
+    MYTYPE alpha = 1.0;
+    MYTYPE beta = 1.0;
+    cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, M, K, N, alpha, A, N, B, K, beta, C, K);
+    for(int i = 0 ; i < M; i++){
+        int offset = i * K;
+        for (int j = 0; j < K; ++j) {
+            printf("%f\t", C[j + offset]);
+        }
+        printf("\n");
+    }
+
+    free(A);A=NULL;
+    free(B);B=NULL;
+    free(C);C=NULL;
+    cudaFree(dA);dA=NULL;
+    cudaFree(dB);dB=NULL;
+    cudaFree(dC);dC=NULL;
     return 0;
 }
 
