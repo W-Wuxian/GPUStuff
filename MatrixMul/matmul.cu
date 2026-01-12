@@ -77,12 +77,14 @@ int main(){
 
     // Perform the vector add on the device
     dim3 threadsPerBlock(5, 5);
-    dim3 numBlocks((M + threadsPerBlock.x - 1) / threadsPerBlock.x, (K + threadsPerBlock.y - 1) / threadsPerBlock.y);
+    dim3 numBlocks((K + threadsPerBlock.x - 1) / threadsPerBlock.x, (M + threadsPerBlock.y - 1) / threadsPerBlock.y);
     matrix_multiplication<<<numBlocks, threadsPerBlock>>>(dA, dB, dC, M, N, K);
     cudaDeviceSynchronize();
 
     // copy back the result from device to host
     cudaMemcpy(C, dC, CSize, cudaMemcpyDeviceToHost);
+    printf("M=%d N=%d K=%d:\n", M, N, K);
+    printf("Result on Device:\n");
     for(int i = 0 ; i < M; i++){
         int offset = i * K;
         for (int j = 0; j < K; ++j) {
@@ -95,6 +97,7 @@ int main(){
     MYTYPE alpha = 1.0;
     MYTYPE beta = 1.0;
     cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, M, K, N, alpha, A, N, B, K, beta, C, K);
+    printf("Result on Host:\n");
     for(int i = 0 ; i < M; i++){
         int offset = i * K;
         for (int j = 0; j < K; ++j) {

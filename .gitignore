@@ -29,6 +29,7 @@
 *.dylib
 
 # Executables
+*run
 *.run
 *.exe
 *.out
