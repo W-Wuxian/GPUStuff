@@ -147,7 +147,7 @@ int main(){
     // }
 
     MYTYPE alpha = 1.0;
-    MYTYPE beta = 1.0;
+    MYTYPE beta = 0.0;
     cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, M, K, N, alpha, A, N, B, K, beta, CC, K);
     // printf("Result on Host:\n");
     // for(int i = 0 ; i < M; i++){
