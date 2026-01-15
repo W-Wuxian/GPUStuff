@@ -1,12 +1,24 @@
 #!/bin/bash
 
+module load nvhpc/ openblas/
+
+# BasicCudaVar
+FOLDER=BasicCudaVar
+FILE=show.cu
+FF=${FOLDER}/${FILE}
+BIN=show.bin
+nvcc -O3 -arch=sm_86 -Xcompiler -Wall --ptxas-options=-v ${FF} -o ${BIN}
+./${BIN}
+
+# VectorAdd
+
 src=$1
 exec=$2
 
 #cd $PWD
 #nvcc -O3 -arch=sm_86 -Xcompiler -Wall --ptxas-options=-v $src -o $exec
 
-module load nvhpc/ openblas/
+
 nvcc -O3 -arch=sm_86 -Xcompiler -Wall --ptxas-options=-v $src -o $exec -I$OpenBLAS_DIR/include -L$OpenBLAS_DIR/lib -lopenblas
 ./run
 

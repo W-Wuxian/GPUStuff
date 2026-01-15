@@ -1,18 +1,46 @@
 #include <stdio.h>
 #include <time.h>
 #include <stdlib.h>
-//#include <sys/time.h>
-//#include <math.h>
-//#include <omp.h>
-//#include <cuda.h>
 #include <cuda_runtime.h>
 #include <cblas.h>
-//#include <cuda_profiler_api.h>
+
+#ifdef USE_FLOAT
+    #define MYTYPE float
+    #define MYTYPE_FLOAT  // Active le bon cas
+    #define cblas_xgemm cblas_sgemm
+#elif USE_DOUBLE
+    #define MYTYPE double
+    #define MYTYPE_DOUBLE // Active le bon cas
+    #define cblas_xgemm cblas_dgemm
+#else
+    #define MYTYPE double  // Default: Double
+    #define cblas_xgemm cblas_dgemm
+#endif
+
 #define MIN_LEN 1
-//#define MAX_LEN 100
 #define MAX_LEN 8192
-#define MYTYPE double
 #define TILE_LEN 16
+
+void compareHostDevice(const MYTYPE* Host, const MYTYPE* Device, const int rows, const int cols){
+    // Type-specific tolerances (scale ~5-10× epsilon)
+    #if defined(MYTYPE_FLOAT)
+        const MYTYPE tol = 1e-6f;  // ~10× FLT_EPSILON
+    #elif defined(MYTYPE_DOUBLE)
+        const MYTYPE tol = 1e-14;  // ~5× DBL_EPSILON
+    #else
+        const MYTYPE tol = 1e-12;
+    #endif
+    for(int i = 0 ; i < rows; i++){
+        int offset = i * cols;
+        for (int j = 0; j < cols; ++j) {
+            int k=j + offset;
+            if (fabs(Host[k] - Device[k]) > tol * (fabs(Host[k]) + fabs(Device[k]) + 1e-15)) {
+                printf("mismatch (%d,%d): host=%.17g device=%.17g rel_err=%g\n",
+                       i, j, Host[k], Device[k], fabs(Host[k]-Device[k]) / (fabs(Host[k])+1e-15));
+            }
+        }
+    }
+}
 
 //https://gist.github.com/raytroop/120e2d175d95f82edbee436374293420
 //https://stackoverflow.com/questions/14038589/what-is-the-canonical-way-to-check-for-errors-using-the-cuda-runtime-api
@@ -108,11 +136,11 @@ int main(){
     MYTYPE* A = (MYTYPE*) malloc(ASize);
     MYTYPE* B = (MYTYPE*) malloc(BSize);
     MYTYPE* C = (MYTYPE*) malloc(CSize);
-    MYTYPE* CC = (MYTYPE*) malloc(CSize);
+    MYTYPE* HostRef = (MYTYPE*) malloc(CSize);
     init_rand(A, M * N);
     init_rand(B, N * K);
     memset(C, 0, CSize);
-    memset(CC, 0, CSize);
+    memset(HostRef, 0, CSize);
 
     // Allocate and initialize arrays on the device
     // The initialization step is a copy from host to device
@@ -137,45 +165,17 @@ int main(){
     // copy back the result from device to host
     gpu_errchk(cudaMemcpy(C, dC, CSize, cudaMemcpyDeviceToHost));
     printf("M=%d N=%d K=%d:\n", M, N, K);
-    // printf("Result on Device:\n");
-    // for(int i = 0 ; i < M; i++){
-    //     int offset = i * K;
-    //     for (int j = 0; j < K; ++j) {
-    //         printf("%f\t", C[j + offset]);
-    //     }
-    //     printf("\n");
-    // }
 
     MYTYPE alpha = 1.0;
     MYTYPE beta = 0.0;
-    cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, M, K, N, alpha, A, N, B, K, beta, CC, K);
-    // printf("Result on Host:\n");
-    // for(int i = 0 ; i < M; i++){
-    //     int offset = i * K;
-    //     for (int j = 0; j < K; ++j) {
-    //         printf("%f\t", CC[j + offset]);
-    //     }
-    //     printf("\n");
-    // }
-    const MYTYPE tol = 1e-12;
-    for(int i = 0 ; i < M; i++){
-        int offset = i * K;
-        for (int j = 0; j < K; ++j) {
-            int k=j + offset;
-            if (fabs(CC[k] - C[k]) > tol * (fabs(CC[k]) + fabs(C[k]) + 1e-15)) {
-                printf("mismatch (%d,%d): host=%.17g device=%.17g rel_err=%g\n",
-                       i, j, CC[k], C[k], fabs(CC[k]-C[k]) / (fabs(CC[k])+1e-15));
-            }
-            // if(CC[k] != C[k]){
-            //     printf("missmatch value at (%d,%d) host=%f device=%f\n", i,j,CC[k],C[k]);
-            // }
-        }
-    }
+    cblas_xgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, M, K, N, alpha, A, N, B, K, beta, HostRef, K);
+
+    compareHostDevice(HostRef, C, M, K);
 
     free(A);A=NULL;
     free(B);B=NULL;
     free(C);C=NULL;
-    free(CC);CC=NULL;
+    free(HostRef);HostRef=NULL;
     gpu_errchk(cudaFree(dA));dA=NULL;
     gpu_errchk(cudaFree(dB));dB=NULL;
     gpu_errchk(cudaFree(dC));dC=NULL;
