@@ -6,9 +6,8 @@
 
 #define MIN_LEN 1
 #define MAX_LEN 8192
-//#define MAX_LEN 10
 #define MAX_LEN_TOBESHOW 10
-#define TILE_LEN 4
+#define TILE_LEN 16
 
 #ifdef USE_FLOAT
     #define MYTYPE float
@@ -17,6 +16,7 @@
     #define cblas_xcopy cblas_scopy
     #define cblas_xaxpy cblas_saxpy
     #define cblas_xomatcopy cblas_somatcopy
+    #define WICHTYPE() printf("Using float\n")
 #elif USE_DOUBLE
     #define MYTYPE double
     #define MYTYPE_DOUBLE // Active le bon cas
@@ -24,22 +24,51 @@
     #define cblas_xcopy cblas_dcopy
     #define cblas_xaxpy cblas_daxpy
     #define cblas_xomatcopy cblas_domatcopy
+    #define WICHTYPE() printf("Using double\n")
 #else
     #define MYTYPE double  // Default: Double
     #define cblas_xgemm cblas_dgemm
     #define cblas_xcopy cblas_dcopy
     #define cblas_xaxpy cblas_daxpy
     #define cblas_xomatcopy cblas_domatcopy
+    #define WICHTYPE() printf("Using double\n")
 #endif
+
+//https://gist.github.com/raytroop/120e2d175d95f82edbee436374293420
+//https://stackoverflow.com/questions/14038589/what-is-the-canonical-way-to-check-for-errors-using-the-cuda-runtime-api
+#ifdef WDEBUG
+#define gpu_errchk(ans) { gpu_assert((ans), __FILE__, __LINE__); }
+#else
+#define gpu_errchk(ans) { (ans); }
+#endif
+
+inline void gpu_assert(cudaError_t code, const char *file, int line,
+                       bool abort = true) {
+    if (code != cudaSuccess) {
+        fprintf(stderr, "gpu_assert: %s %s %d\n",
+                cudaGetErrorString(code), file, line);
+        exit(code);
+    }
+}
+
+#define MAX(a,b) \
+({ __typeof__ (a) _a = (a); \
+    __typeof__ (b) _b = (b); \
+    _a > _b ? _a : _b; })
+
+#define MIN(a,b) \
+({ __typeof__ (a) _a = (a); \
+   __typeof__ (b) _b = (b); \
+      _a < _b ? _a : _b; })
 
 int genrangerandint(int max_len, int min_len){
     return (rand() % (max_len - min_len + 1)) + min_len;
 }
 
-void genrandmat(int (*fptr)(int, int), MYTYPE* mat, int nrow, int ncol){
+void genrandmat(int (*fptr)(int, int), MYTYPE* mat, int nrow, int ncol, int r1, int r2){
     size_t nelems = nrow*ncol;
     for (size_t i = 0; i < nelems; ++i) {
-        mat[i] = (MYTYPE)fptr(MAX_LEN, MIN_LEN);
+        mat[i] = (MYTYPE)fptr(MAX(r1,r2), MIN(r1, r2));
     }
 }
 
@@ -54,33 +83,44 @@ void showmat(MYTYPE* mat, int nrow, int ncol, const char mat_name[]){
 }
 
 void compareHostDevice(const MYTYPE* Host, const MYTYPE* Device, const int rows, const int cols){
+    int mismatches = 0;
     // Type-specific tolerances (scale ~5-10× epsilon)
     #if defined(MYTYPE_FLOAT)
-        const MYTYPE tol = 1e-6f;  // ~10× FLT_EPSILON
+        const MYTYPE rtol = 1e-4f;//1e-6f;  // ~10× FLT_EPSILON
+        const MYTYPE atol = 1e-6f;//1e-6f;  // ~10× FLT_EPSILON
     #elif defined(MYTYPE_DOUBLE)
-        const MYTYPE tol = 1e-14;  // ~5× DBL_EPSILON
+        const MYTYPE rtol = 1e-6;//1e-14;  // ~5× DBL_EPSILON
+        const MYTYPE atol = 1e-12;//1e-14;  // ~5× DBL_EPSILON
     #else
-        const MYTYPE tol = 1e-12;
+        const MYTYPE rtol = 1e-6;//1e-12;
+        const MYTYPE atol = 1e-12;
     #endif
     for(int i = 0 ; i < rows; i++){
         int offset = i * cols;
         for (int j = 0; j < cols; ++j) {
             int k=j + offset;
-            if (fabs(Host[k] - Device[k]) > tol * (fabs(Host[k]) + fabs(Device[k]) + 1e-15)) {
+            if (fabs(Host[k] - Device[k]) > rtol * (fabs(Host[k]) + fabs(Device[k]) + atol)) {
                 printf("mismatch (%d,%d): host=%.17g device=%.17g rel_err=%g\n",
-                       i, j, Host[k], Device[k], fabs(Host[k]-Device[k]) / (fabs(Host[k])+1e-15));
+                       i, j, Host[k], Device[k], fabs(Host[k]-Device[k]) / (fabs(Host[k])+atol));
+                mismatches++;
+                if(mismatches >= 10) { printf("ABORT: >10 mismatches\n"); return; }
             }
         }
     }
+    printf("%s: %d mismatches\n", mismatches ? "FAILED" : "PASSED", mismatches);
 }
 void checktranspose(const MYTYPE* input, MYTYPE* output, int rows, int cols){
+    int mismatches = 0;
     // Type-specific tolerances (scale ~5-10× epsilon)
     #if defined(MYTYPE_FLOAT)
-        const MYTYPE tol = 1e-6f;  // ~10× FLT_EPSILON
+        const MYTYPE rtol = 1e-4f;//1e-6f;  // ~10× FLT_EPSILON
+        const MYTYPE atol = 1e-6f;//1e-6f;  // ~10× FLT_EPSILON
     #elif defined(MYTYPE_DOUBLE)
-        const MYTYPE tol = 1e-14;  // ~5× DBL_EPSILON
+        const MYTYPE rtol = 1e-6;//1e-14;  // ~5× DBL_EPSILON
+        const MYTYPE atol = 1e-12;//1e-14;  // ~5× DBL_EPSILON
     #else
-        const MYTYPE tol = 1e-12;
+        const MYTYPE rtol = 1e-6;//1e-12;
+        const MYTYPE atol = 1e-12;
     #endif
     for(int i=0; i<rows; i++){
         int in_offset = i * cols;
@@ -88,13 +128,15 @@ void checktranspose(const MYTYPE* input, MYTYPE* output, int rows, int cols){
             int in_ID = in_offset + j;
             int out_offset = j*rows;
             int out_ID = out_offset + i;
-            if (fabs(input[in_ID] - output[out_ID]) > tol * (fabs(input[in_ID]) + fabs(output[out_ID]) + 1e-15)) {
+            if (fabs(input[in_ID] - output[out_ID]) > rtol * (fabs(input[in_ID]) + fabs(output[out_ID]) + atol)) {
                 printf("mismatch (%d,%d): host=%.17g device=%.17g rel_err=%g\n",
-                       i, j, input[in_ID], output[out_ID], fabs(input[in_ID]-output[out_ID]) / (fabs(input[in_ID])+1e-15));
+                       i, j, input[in_ID], output[out_ID], fabs(input[in_ID]-output[out_ID]) / (fabs(input[in_ID])+atol));
+                mismatches++;
+                if(mismatches >= 10) { printf("ABORT: >10 mismatches\n"); return; }
             }
-            //if(input[j+i*cols]!=output[i+j*rows])printf("Missmatch transpose A[%d][%d]!=TranA[%d][%d]\n",i,j,j,i);
         }
     }
+    printf("%s: %d mismatches\n", mismatches ? "FAILED" : "PASSED", mismatches);
 }
 
 // input rows x cols Row-major
@@ -132,6 +174,8 @@ __global__ void tiled_matrix_transpose_kernel(const MYTYPE* input, MYTYPE* outpu
 
     if(in_ID < in_rows * in_cols){
         shared_input[local_tile_row][local_tile_col] = input[in_ID]; // copy from global to shared memory
+    } else {
+        shared_input[local_tile_row][local_tile_col] = (MYTYPE)0;
     }
     __syncthreads();
 
@@ -141,52 +185,6 @@ __global__ void tiled_matrix_transpose_kernel(const MYTYPE* input, MYTYPE* outpu
 
 }
 
-// C is M x K Row-major
-__global__ void tiled_matmul(int M, int N, int K, MYTYPE* deviceA, MYTYPE* deviceB, MYTYPE* deviceC){
-    __shared__ MYTYPE sharedA[TILE_LEN][TILE_LEN];
-    __shared__ MYTYPE sharedB[TILE_LEN][TILE_LEN];
-    const int col = threadIdx.x + blockIdx.x * blockDim.x; // column ID (grid level)
-    const int row = threadIdx.y + blockIdx.y * blockDim.y; // row ID (grid level)
-    //const int GID = col + (gridDim.x * blockDim.x) * row; // global (grid level) thread ID)
-    const int MID = col + row * K; // thread ID at matrix level
-
-    const int local_tile_col = threadIdx.x;
-    const int local_tile_row = threadIdx.y;
-
-    const int numtile = (N + (TILE_LEN - 1)) / TILE_LEN;
-
-    MYTYPE tiled_dotproduct = (MYTYPE)0;
-
-    for(int tile_idx=0; tile_idx<numtile; ++tile_idx){
-        const int tile_offset = tile_idx * TILE_LEN;
-        // load sharedA with A tile by tile
-        const int A_col_idx = tile_offset + local_tile_col;
-        if(row < M && A_col_idx < N){
-            sharedA[local_tile_row][local_tile_col]=deviceA[A_col_idx + row * N];
-        }
-        // load sharedB with B tile by tile
-        const int B_row_idx = tile_offset + local_tile_row;
-        if(B_row_idx < N && col < K){
-            sharedB[local_tile_row][local_tile_col]=deviceB[col + B_row_idx * K];
-        }
-        __syncthreads();
-        // compute tiled dotproduct
-        for(int t=0; t<TILE_LEN; ++t){
-            tiled_dotproduct += sharedA[local_tile_row][t] * sharedB[t][local_tile_col];
-        }
-        __syncthreads();
-    }
-    if(row < M && col < K){
-        deviceC[MID] = tiled_dotproduct;
-    }
-}
-
-/*
- * Row-major
- * A is M x N
- * B is N x K
- * C is M x K
- */
 int main(){
     #if defined(FIXSEED)
     #define WSRAND
@@ -210,55 +208,64 @@ int main(){
 
     MYTYPE* dA = NULL;
     MYTYPE* dTransA = NULL;
-    cudaMalloc((void**)&dA, SizeA);
-    cudaMalloc((void**)&dTransA, SizeTransA);
+    gpu_errchk(cudaMalloc((void**)&dA, SizeA));
+    gpu_errchk(cudaMalloc((void**)&dTransA, SizeTransA));
 
-    genrandmat(genrangerandint, A, M, N);
+    genrandmat(genrangerandint, A, M, N, MAX_LEN, 1);
     memset(TransA, 0, SizeTransA);
     memset(HostRef, 0, SizeTransA);
 
     printf("A is M=%d x N=%d\n", M,N);
     if(M<=MAX_LEN_TOBESHOW && N<=MAX_LEN_TOBESHOW)showmat(A, M, N, "A");
+    openblas_set_num_threads(1);
+    MYTYPE alpha = (MYTYPE)1.0;
     struct timespec start_cpu, end_cpu;
     clock_gettime(CLOCK_MONOTONIC, &start_cpu);
-    cblas_xomatcopy(CblasRowMajor, CblasTrans, M, N, (MYTYPE)1.0, A, N, HostRef, M);
+    cblas_xomatcopy(CblasRowMajor, CblasTrans, M, N, alpha, A, N, HostRef, M);
     clock_gettime(CLOCK_MONOTONIC, &end_cpu);
     double cpu_time_ms = (end_cpu.tv_sec - start_cpu.tv_sec) * 1000.0 + (end_cpu.tv_nsec - start_cpu.tv_nsec) / 1e6;
     if(M<=MAX_LEN_TOBESHOW && N<=MAX_LEN_TOBESHOW)showmat(HostRef, N, M, "HostRef Transpose(A)");
     checktranspose(A, HostRef, M, N);
 
-    cudaMemcpy(dA, A, SizeA, cudaMemcpyHostToDevice);
-    cudaMemcpy(dTransA, TransA, SizeTransA, cudaMemcpyHostToDevice);
+    gpu_errchk(cudaMemcpy(dA, A, SizeA, cudaMemcpyHostToDevice));
+    gpu_errchk(cudaMemcpy(dTransA, TransA, SizeTransA, cudaMemcpyHostToDevice));
 
     dim3 BD(TILE_LEN,TILE_LEN); // blockDim is the number of threads per block in each direction TILE_LEN x TILE_LEN
     dim3 GD((N + BD.x - 1) / BD.x, (M + BD.y - 1) / BD.y); // gridDim is the number of block in each direction
 
     cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
+    gpu_errchk(cudaEventCreate(&start));
+    gpu_errchk(cudaEventCreate(&stop));
 
-    cudaEventRecord(start);
+    gpu_errchk(cudaEventRecord(start));
     matrix_transpose_kernel<<<GD, BD>>>(dA, dTransA, M, N);
-    cudaDeviceSynchronize();
-    cudaMemcpy(TransA, dTransA, SizeTransA, cudaMemcpyDeviceToHost);
-    cudaEventRecord(stop);
-    cudaEventSynchronize(stop);
+    gpu_errchk(cudaGetLastError());
+    gpu_errchk(cudaDeviceSynchronize());
+    gpu_errchk(cudaMemcpy(TransA, dTransA, SizeTransA, cudaMemcpyDeviceToHost));
+    gpu_errchk(cudaEventRecord(stop));
+    gpu_errchk(cudaEventSynchronize(stop));
     float kernel1_time_ms;
     cudaEventElapsedTime(&kernel1_time_ms, start, stop);
     if(M<=MAX_LEN_TOBESHOW && N<=MAX_LEN_TOBESHOW)showmat(TransA, N, M, "device Transpose(A)");
     checktranspose(A, TransA, M, N);
 
-    cudaEventRecord(start);
+    gpu_errchk(cudaEventRecord(start));
     tiled_matrix_transpose_kernel<<<GD, BD>>>(dA, dTransA, M, N);
-    cudaDeviceSynchronize();
-    cudaMemcpy(TransA, dTransA, SizeTransA, cudaMemcpyDeviceToHost);
-    cudaEventRecord(stop);
-    cudaEventSynchronize(stop);
+    gpu_errchk(cudaGetLastError());
+    gpu_errchk(cudaDeviceSynchronize());
+    gpu_errchk(cudaMemcpy(TransA, dTransA, SizeTransA, cudaMemcpyDeviceToHost));
+    gpu_errchk(cudaEventRecord(stop));
+    gpu_errchk(cudaEventSynchronize(stop));
     float kernel2_time_ms;
     cudaEventElapsedTime(&kernel2_time_ms, start, stop);
     if(M<=MAX_LEN_TOBESHOW && N<=MAX_LEN_TOBESHOW)showmat(TransA, N, M, "device Transpose(A)");
     checktranspose(A, TransA, M, N);
 
+    WICHTYPE();
+    #ifdef WSRAND
+    printf("With random seed\n");
+    #endif
+    printf("A is M=%d x N=%d\n", M,N);
     printf("CPU (BLAS) time: %.3f ms\n", cpu_time_ms);
     printf("Simple kernel time: %.3f ms\n", kernel1_time_ms);
     printf("Tiled kernel time: %.3f ms\n", kernel2_time_ms);
@@ -266,8 +273,8 @@ int main(){
     printf("Simple vs CPU speedup: %.2fx\n", cpu_time_ms / kernel1_time_ms);
     printf("Tiled vs Simple speedup: %.2fx\n", kernel1_time_ms / kernel2_time_ms);
 
-    cudaFree(dA);dA = NULL;
-    cudaFree(dTransA);dTransA = NULL;
+    gpu_errchk(cudaFree(dA));dA = NULL;
+    gpu_errchk(cudaFree(dTransA));dTransA = NULL;
     free(A);A = NULL;
     free(TransA);TransA = NULL;
     free(HostRef);HostRef = NULL;

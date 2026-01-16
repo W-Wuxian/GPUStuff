@@ -30,6 +30,7 @@
 
 # Executables
 *run
+*.bin
 *.run
 *.exe
 *.out
@@ -66,3 +67,4 @@ dkms.conf
 
 # Other
 tmp/
+old/

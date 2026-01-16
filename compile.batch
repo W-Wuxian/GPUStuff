@@ -1,27 +1,70 @@
 #!/bin/bash
 
 module load nvhpc/ openblas/
+#OPENBLAS_VERBOSE=2
+#OPENBLAS_NUM_THREADS=4
 
-# BasicCudaVar
-FOLDER=BasicCudaVar
-FILE=show.cu
-FF=${FOLDER}/${FILE}
-BIN=show.bin
-nvcc -O3 -arch=sm_86 -Xcompiler -Wall --ptxas-options=-v ${FF} -o ${BIN}
-./${BIN}
+USERCASE=$1
 
-# VectorAdd
+CASE_BASIC="basic"
+CASE_VECADD="vecadd"
+CASE_TRANSPOSE="transpose"
+CASE_MATMUL="matmul"
 
-src=$1
-exec=$2
+if [[ "$USERCASE" == "$CASE_BASIC" ]]
+then
+    # BasicCudaVar
+    FOLDER=BasicCudaVar
+    FILE=show.cu
+    FF=${FOLDER}/${FILE}
+    BIN=basic.bin
+    nvcc -O3 -arch=sm_86 -Xcompiler -Wall --ptxas-options=-v ${FF} -o ${BIN}
+    ./${BIN}
+elif [[ "$USERCASE" == "$CASE_VECADD" ]]
+then
+    # VectorAd
+    FOLDER=VectorAdd
+    FILE=vectoradd-kernels.cu
+    FF=${FOLDER}/${FILE}
+    BIN=vecadd.bin
+    nvcc -O3 -arch=sm_86 -Xcompiler -Wall --ptxas-options=-v -DUSE_FLOAT -DFIXSEED=1234567 -DWDEBUG ${FF} -o ${BIN} -I$OpenBLAS_DIR/include -L$OpenBLAS_DIR/lib -lopenblas
+    ./${BIN}
+    nvcc -O3 -arch=sm_86 -Xcompiler -Wall --ptxas-options=-v -DUSE_DOUBLE -DFIXSEED=1234567 -DWDEBUG ${FF} -o ${BIN} -I$OpenBLAS_DIR/include -L$OpenBLAS_DIR/lib -lopenblas
+    ./${BIN}
+elif [[ "$USERCASE" == "$CASE_TRANSPOSE" ]]
+then
+    # MatrixTranspose
+    FOLDER=MatrixTranspose
+    FILE=transpose-kernels.cu
+    FF=${FOLDER}/${FILE}
+    BIN=transpose.bin
+    nvcc -O3 -arch=sm_86 -Xcompiler -Wall --ptxas-options=-v -DUSE_FLOAT -DFIXSEED=1234567 -DWDEBUG ${FF} -o ${BIN} -I$OpenBLAS_DIR/include -L$OpenBLAS_DIR/lib -lopenblas
+    ./${BIN}
+    nvcc -O3 -arch=sm_86 -Xcompiler -Wall --ptxas-options=-v -DUSE_DOUBLE -DFIXSEED=1234567 -DWDEBUG ${FF} -o ${BIN} -I$OpenBLAS_DIR/include -L$OpenBLAS_DIR/lib -lopenblas
+    ./${BIN}
+elif [[ "$USERCASE" == "$CASE_MATMUL" ]]
+then
+    # MatrixMul
+    FOLDER=MatrixMul
+    FILE=matmul-kernels.cu
+    FF=${FOLDER}/${FILE}
+    BIN=matmul.bin
+    nvcc -O3 -arch=sm_86 -Xcompiler -Wall --ptxas-options=-v -DUSE_FLOAT -DFIXSEED=1234567 -DWDEBUG ${FF} -o ${BIN} -I$OpenBLAS_DIR/include -L$OpenBLAS_DIR/lib -lopenblas
+    ./${BIN}
+    nvcc -O3 -arch=sm_86 -Xcompiler -Wall --ptxas-options=-v -DUSE_DOUBLE -DFIXSEED=1234567 -DWDEBUG ${FF} -o ${BIN} -I$OpenBLAS_DIR/include -L$OpenBLAS_DIR/lib -lopenblas
+    ./${BIN}
+fi
 
-#cd $PWD
-#nvcc -O3 -arch=sm_86 -Xcompiler -Wall --ptxas-options=-v $src -o $exec
+#########################################################################################################################################################################
+#src=$1
+#exec=$2
 
-
-nvcc -O3 -arch=sm_86 -Xcompiler -Wall --ptxas-options=-v $src -o $exec -I$OpenBLAS_DIR/include -L$OpenBLAS_DIR/lib -lopenblas
-./run
-
+##cd $PWD
+##nvcc -O3 -arch=sm_86 -Xcompiler -Wall --ptxas-options=-v $src -o $exec
+#nvcc -O3 -arch=sm_86 -Xcompiler -Wall --ptxas-options=-v -DUSE_DOUBLE -DFIXSEED=1234567 -DWDEBUG $src -o $exec -I$OpenBLAS_DIR/include -L$OpenBLAS_DIR/lib -lopenblas
+#./run
+#########################################################################################################################################################################
+#
 #guix shell openblas
 #module load nvhpc/ && \
 # nvcc -O3 -arch=sm_86 -Xcompiler -Wall --ptxas-options=-v $src -o $exec -I /gnu/store/bp6h1xv6kcvdq871i5g4q8jz3xzbrvm3-profile/include -L /gnu/store/bp6h1xv6kcvdq871i5g4q8jz3xzbrvm3-profile/lib -lopenblas && \
